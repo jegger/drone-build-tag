@@ -2,26 +2,31 @@
 
 # Override basic drone tags.
 
-# Drone 5+ docker plugin will read PLUGIN_TAGS from a .env file
-# Tags:
-#   Feature branch: $VERSION-$COMMIT_DATE.$BRANCH.$SHA
-#   Master: $VERSION and "latest"
 #
-# Use --include-feature-tag to add a feature branch tag on a master branch commit
+# Use --py-module to specify the module from which the version should be loaded.
+#
 
 function join_by { local IFS="$1"; shift; echo "$*"; }
 
-if [ "$1" == --include-feature-tag ]; then
-  INCLUDE_FEATURE_TAG="true"
-fi
-
-if [ -f "./package.json" ]; then
+# Get version from python package
+if [ "$1" == --py-module ]; then
+  if [ -z "$2" ]; then
+    VERSION="$(python -c 'import version; print version.__version__')"
+  else
+    PY_MODULE="$2"
+    VERSION="$(python -c 'from '$PY_MODULE' import version; print version.__version__')"
+  fi
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Was not able to get version from python module"
+    exit 1
+  fi
+elif [ -f "./package.json" ]; then
   # Node
   VERSION=$(jq -r .version ./package.json )
   echo "Found package.json"
-elif [ -f "./.version" ]; then
+elif [ -f "./version" ]; then
   # a version file
-  VERSION=$(echo ./.version)
+  VERSION=$(cat ./version)
   echo "Found .version file"
 elif [ -f "./pom.xml" ]; then
   # a maven pom file
@@ -36,11 +41,7 @@ else
   exit 1
 fi
 
-# date is unix time stamp for commit
-COMMIT_DATE=$(git --no-pager log -1 --format='%ct')
-
 echo "VERSION: ${VERSION}"
-echo "COMMIT_DATE: ${COMMIT_DATE}"
 echo "DRONE_COMMIT_BRANCH: ${DRONE_COMMIT_BRANCH}"
 echo "DRONE_COMMIT_SHA: ${DRONE_COMMIT_SHA:0:7}"
 
@@ -48,20 +49,43 @@ if [ "${DRONE_COMMIT_BRANCH}" != "master" ]; then
   INCLUDE_FEATURE_TAG="true"
 fi
 
+# Count tags since last commit
+TAG=$(git describe --abbrev=0 --tags)        # Get latest git tag
+TAG_COMMIT=$(git rev-list $TAG | head -n 1)  # Get commit of latest tag
+COUNT=$(git rev-list $TAG^..HEAD | wc -l)    # Count commits since last tag
+COUNT=$((COUNT-1))                           # Decrease count by one
+
+echo "Number of commits since last tag" $COUNT
+
+
 TAGS=()
 if [ "${DRONE_COMMIT_BRANCH}" == "master" ]; then
-  echo "Writing master style tags"
-  TAGS+=("${VERSION}")
-  TAGS+=("latest")
+  # Check if this commit is tagged
+  # Only if we are on master and the commit-tag == found version
+  # then release master-style tag (latest; <version>)
+  FINAL_TAG=false
+  GIT_TAG=$(git describe --tags)
+  if [ $? -eq 0 ]; then
+    echo $GIT_TAG "==" $VERSION
+    if [ $GIT_TAG == $VERSION ]; then
+      echo "Writing master style tags"
+      TAGS+=("${VERSION}")
+      TAGS+=("latest")
+      FINAL_TAG=true
+    fi
+  fi
+
+  # If it is not correctly tagged, create VERSION.
+  if [ "$FINAL_TAG" = false ] ; then
+    TAGS+=("${VERSION}-${COUNT}")
+  fi
 fi
 
 if [ "${INCLUDE_FEATURE_TAG}" == "true" ]; then
   echo "Writing feature style tag"
-  TAGS+=("${VERSION}-${COMMIT_DATE}.${DRONE_COMMIT_BRANCH}.${DRONE_COMMIT_SHA:0:7}")
+  TAGS+=("${VERSION}-${DRONE_COMMIT_BRANCH}.${DRONE_COMMIT_SHA:0:7}")
 fi
 
 echo "Writing tags to .env file:"
 echo " - PLUGIN_TAGS=$(join_by , ${TAGS[*]})"
 echo "PLUGIN_TAGS=$(join_by , ${TAGS[*]})" > .env
-echo " - DRONE_BUILD_NUMBER=${COMMIT_DATE}"
-echo "DRONE_BUILD_NUMBER=${COMMIT_DATE}" >> .env
