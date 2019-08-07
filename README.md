@@ -13,6 +13,12 @@ Python-module version usage:
 * `build-tags.sh --py-module mymodule` will look in the `mymodule/` directory for a file called version.py; reads the variable `__version__`
 
 
+Building
+--------
+- docker login
+- docker build -t jegger/drone-build-tag:<TAG-VERSION> .
+- docker push jegger/drone-build-tag:<TAG-VERSION>
+
 Usage
 -----
 
@@ -20,7 +26,7 @@ Tags:
 
 * Feature branch: `$VERSION-$BRANCH.$SHA`
 * Master: `$VERSION` and `latest` if git-tag is the same as the found version number.
-* Master: `$VERSION-$COUNT` count = commits since latest git-tag.
+* Master: `$VERSION-$COUNT.$SHA` count = commits since latest git-tag.
 
 Searches for version in the following places (if arg --py-module is not set):
 

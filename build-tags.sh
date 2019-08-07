@@ -83,7 +83,7 @@ if [ "${GIT_BRANCH}" == "master" ]; then
 
   # If it is not correctly tagged, create VERSION.
   if [ "$FINAL_TAG" = false ] ; then
-    TAGS+=("${VERSION}-${COUNT}")
+    TAGS+=("${VERSION}-${COUNT}.${DRONE_COMMIT_SHA:0:7}")
     TAGS+=("latest")
   fi
 fi
