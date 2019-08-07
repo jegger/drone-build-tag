@@ -14,7 +14,7 @@ if [ "$1" == --py-module ]; then
     VERSION="$(python -c 'import version; print version.__version__')"
   else
     PY_MODULE="$2"
-    VERSION="$(python -c 'from '$PY_MODULE' import version; print version.__version__')"
+    VERSION="$(python -c 'import '$PY_MODULE'; print '$PY_MODULE'.__version__')"
   fi
   if [ $? -ne 0 ]; then
     echo "ERROR: Was not able to get version from python module"
@@ -41,17 +41,23 @@ else
   exit 1
 fi
 
+GIT_BRANCH=$(git symbolic-ref --short HEAD)
+
 echo "VERSION: ${VERSION}"
 echo "DRONE_COMMIT_BRANCH: ${DRONE_COMMIT_BRANCH}"
+echo "GIT_BRANCH: " ${GIT_BRANCH}
 echo "DRONE_COMMIT_SHA: ${DRONE_COMMIT_SHA:0:7}"
 
-if [ "${DRONE_COMMIT_BRANCH}" != "master" ]; then
+if [ "${GIT_BRANCH}" != "master" ]; then
   INCLUDE_FEATURE_TAG="true"
 fi
 
 # Count tags since last commit
+echo git describe --abbrev=0 --tags
 TAG=$(git describe --abbrev=0 --tags)        # Get latest git tag
+echo git rev-list $TAG | head -n 1
 TAG_COMMIT=$(git rev-list $TAG | head -n 1)  # Get commit of latest tag
+echo git rev-list $TAG^..HEAD | wc -l
 COUNT=$(git rev-list $TAG^..HEAD | wc -l)    # Count commits since last tag
 COUNT=$((COUNT-1))                           # Decrease count by one
 
@@ -59,7 +65,7 @@ echo "Number of commits since last tag" $COUNT
 
 
 TAGS=()
-if [ "${DRONE_COMMIT_BRANCH}" == "master" ]; then
+if [ "${GIT_BRANCH}" == "master" ]; then
   # Check if this commit is tagged
   # Only if we are on master and the commit-tag == found version
   # then release master-style tag (latest; <version>)
@@ -78,14 +84,17 @@ if [ "${DRONE_COMMIT_BRANCH}" == "master" ]; then
   # If it is not correctly tagged, create VERSION.
   if [ "$FINAL_TAG" = false ] ; then
     TAGS+=("${VERSION}-${COUNT}")
+    TAGS+=("latest")
   fi
 fi
 
 if [ "${INCLUDE_FEATURE_TAG}" == "true" ]; then
-  echo "Writing feature style tag"
-  TAGS+=("${VERSION}-${DRONE_COMMIT_BRANCH}.${DRONE_COMMIT_SHA:0:7}")
+  CONVERTED_BRANCH=${GIT_BRANCH//\//\_}
+  echo "Writing feature style tag" $CONVERTED_BRANCH
+  TAGS+=("${VERSION}-${CONVERTED_BRANCH}.${DRONE_COMMIT_SHA:0:7}")
 fi
 
-echo "Writing tags to .env file:"
+echo "Writing tags to .tags file:"
 echo " - PLUGIN_TAGS=$(join_by , ${TAGS[*]})"
-echo "PLUGIN_TAGS=$(join_by , ${TAGS[*]})" > .env
+# echo "PLUGIN_TAGS=$(join_by , ${TAGS[*]})" > .tags
+echo "$(join_by , ${TAGS[*]})" >> .tags

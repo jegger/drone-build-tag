@@ -5,4 +5,5 @@ RUN apk add --no-cache jq bash git openssh libxml2 libxml2-utils python
 
 ADD ./build-tags.sh /bin
 
-CMD [ "build-tags.sh" ]
+# CMD [ "build-tags.sh" ]
+CMD ["bash"]
